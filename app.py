@@ -76,8 +76,11 @@ with col2:
         w_umb_sub = st.number_input(
             "Umbilical Submerged Wt (kg/m)", value=3.50, step=0.1
         )
+        t_deck_umb = st.number_input(
+            "Umbilical Deck Tension (kN)", value=15.0, step=1.0
+        )
         st.caption(
-            "Note: Umbilical span is pinned to the plough location ($x_{\\text{plough}}$), yielding an independent payout length based on submerged weight."
+            "Note: Umbilical span terminates at $x_{\\text{plough}}$. Adjusting deck tension dynamically alters the catenary parameter $a_{\\text{umb}}$, payout length, and profile curve."
         )
 
 with col3:
@@ -118,38 +121,25 @@ T_wire_surface = math.sqrt(H_wire**2 + V_wire_top**2)
 T_wire_surface_tons = T_wire_surface / 9.81
 
 # ==========================================
-# MATHEMATICAL ENGINE 2: UMBILICAL (PINNED TO PLOUGH SPAN)
+# MATHEMATICAL ENGINE 2: UMBILICAL (INDEPENDENT CATENARY / FIXED SPAN)
 # ==========================================
-# The umbilical terminates at the plough (same x-span as tow wire)
-x_plough = wire_span
 w_umb_kn = (w_umb_sub * 9.81) / 1000.0  # kN/m
 
+# Ensure deck tension satisfies hanging mass to prevent mathematical collapse
+min_deck_tension = (w_umb_kn * h) + 0.1
+if t_deck_umb < min_deck_tension:
+    t_deck_umb = min_deck_tension
 
-# Bisection solver to find catenary parameter a_umb where x(h) == x_plough
-def solve_a_umb(target_span, h_depth):
-    low = 1e-3
-    high = 100000.0
-    for _ in range(100):
-        mid = (low + high) / 2.0
-        s = math.sqrt(h_depth * (h_depth + 2.0 * mid))
-        x = mid * math.log((s + math.sqrt(s**2 + mid**2)) / mid)
-        if x < target_span:
-            low = mid
-        else:
-            high = mid
-    return (low + high) / 2.0
+# Horizontal tension component at vessel deck
+H_umb = t_deck_umb - (w_umb_kn * h)
+a_umb = max(H_umb / w_umb_kn, 1e-3)
 
-
-a_umb = solve_a_umb(x_plough, h)
+# Independent payout length and matched horizontal termination
 umb_length = math.sqrt(h * (h + 2.0 * a_umb))
-umb_span = x_plough
+umb_span = wire_span  # Fixed termination at plough location
 
-umb_surface_angle_vert = 90.0 - math.degrees(
-    math.atan(umb_length / a_umb)
-)
-
-H_umb = a_umb * w_umb_kn
-T_umb_surface = w_umb_kn * h + H_umb
+umb_surface_angle_vert = 90.0 - math.degrees(math.atan(umb_length / a_umb))
+T_umb_surface = t_deck_umb
 payout_delta = umb_length - wire_length
 
 # ==========================================
@@ -203,7 +193,7 @@ with out_col2:
             delta=f"{payout_delta:+.2f} m vs Tow Wire",
         )
         st.metric(
-            label="Total Hanging Weight at Deck",
+            label="Deck Tension Setting",
             value=f"{T_umb_surface:.2f} kN",
         )
         st.metric(
@@ -234,7 +224,7 @@ x_w_plot = np.where(
 )
 x_w_vessel = wire_span - x_w_plot
 
-# Umbilical Trajectory (Pinned to x_plough)
+# Umbilical Trajectory
 z_u_from_bottom = h - z_plot
 s_u_plot = np.sqrt(z_u_from_bottom * (z_u_from_bottom + 2.0 * a_umb))
 x_u_plot = np.where(
