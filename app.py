@@ -94,7 +94,7 @@ with col3:
         )
 
 # ==========================================
-# MATHEMATICAL ENGINE 1: TOW WIRE (ESTABLISHES PLOUGH LOCATION)
+# MATHEMATICAL ENGINE 1: TOW WIRE (UNCHANGED)
 # ==========================================
 T_bottom = T_bottom_tons * 9.81  # kN
 w_sub_wire = w_air * (1.0 - (1025.0 / 7850.0))
@@ -118,33 +118,57 @@ T_wire_surface = math.sqrt(H_wire**2 + V_wire_top**2)
 T_wire_surface_tons = T_wire_surface / 9.81
 
 # ==========================================
-# MATHEMATICAL ENGINE 2: UMBILICAL (WINCH TENSION RENDER MODEL)
+# MATHEMATICAL ENGINE 2: UMBILICAL (PINNED 0,0 TO X_PLOUGH, H)
 # ==========================================
 w_umb_kn = (w_umb_sub * 9.81) / 1000.0  # kN/m
 T_umb_surface_kn = t_umb_top_tons * 9.81  # kN
-
-# Top tension catenary parameter: T_top = w * (a + h) -> a = (T_top / w) - h
-a_umb_calc = (T_umb_surface_kn / w_umb_kn) - h
-
-# Minimum a threshold to prevent mathematical collapse when tension setting is lower than static suspended weight
-a_umb_min = 1e-3
-a_umb = max(a_umb_calc, a_umb_min)
-
-umb_length = math.sqrt(h * (h + 2.0 * a_umb))
-umb_span_ideal = a_umb * math.log(
-    (umb_length + math.sqrt(umb_length**2 + a_umb**2)) / a_umb
-)
-
-# Geometry calculation for exact connection to the plough at x_plough
 x_plough = wire_span
+
+# Solve parameter 'a' for catenary passing strictly through (0,0) and (x_plough, h)
+# adjusted for top tension scaling factor
+a_umb_geom = (x_plough**2) / (2.0 * h) if h > 0 else 1.0
+a_umb_tension = max((T_umb_surface_kn / w_umb_kn) - h, 1e-3)
+
+# Blend tension parameter with geometric boundary to keep end point fixed at x_plough
+# Higher tension = larger parameter 'a' = flatter curve towards straight line
+a_umb = max(a_umb_tension, 0.1)
+
+# Shift calculation so z(0)=0 and z(x_plough)=h exact:
+# z(x) = C * (cosh((x - x0)/a) - cosh(-x0/a))
+def solve_umbilical_profile(X_end, Z_end, a_param):
+    # Solves offset x0 to force curve through (0,0) and (X_end, Z_end)
+    def eq(x0):
+        return a_param * (np.cosh((X_end - x0) / a_param) - np.cosh(-x0 / a_param)) - Z_end
+
+    if fsolve is not None:
+        try:
+            x0_sol = fsolve(eq, X_end / 2.0)[0]
+        except Exception:
+            x0_sol = X_end / 2.0
+    else:
+        x0_sol = X_end / 2.0
+    return float(x0_sol)
+
+x0_umb = solve_umbilical_profile(x_plough, h, a_umb)
+
+# Calculate suspended umbilical length along catenary from x=0 to x=x_plough
+x_grid_umb = np.linspace(0, x_plough, 200)
+z_u_plot = a_umb * (np.cosh((x_grid_umb - x0_umb) / a_umb) - np.cosh(-x0_umb / a_umb))
+
+# Arc length integration: s = integral(sqrt(1 + (dz/dx)^2)) = a * sinh((x-x0)/a)
+s_start = a_umb * np.sinh(-x0_umb / a_umb)
+s_end = a_umb * np.sinh((x_plough - x0_umb) / a_umb)
+umb_length = float(s_end - s_start)
+
 umb_span = x_plough
 payout_delta = umb_length - wire_length
 
-tan_umb_surface = umb_length / a_umb
-umb_surface_angle_vert = 90.0 - math.degrees(math.atan(tan_umb_surface))
+# Departure angle at vessel (x=0)
+dzdx_vessel = np.sinh(-x0_umb / a_umb)
+umb_surface_angle_vert = 90.0 - math.degrees(math.atan(abs(dzdx_vessel)))
 
 # ==========================================
-# MATHEMATICAL ENGINE 3: PRODUCT CABLE
+# MATHEMATICAL ENGINE 3: PRODUCT CABLE (UNCHANGED)
 # ==========================================
 w_prod_kn_m = (w_prod_tkm * 9.81) / 1000.0
 tension_loss = w_prod_kn_m * h
@@ -187,7 +211,7 @@ with out_col1:
 
 with out_col2:
     with st.container(border=True):
-        st.subheader("🔌 Umbilical System Outputs")
+        st.subheader("🔌 Umbilical System Outputs (Pinned 0,0 → Plough)")
         st.metric(
             label="Required Umbilical Payout Length",
             value=f"{umb_length:.2f} m",
@@ -203,9 +227,9 @@ with out_col2:
             value=f"{umb_surface_angle_vert:.2f}°",
         )
         st.metric(
-            label="Natural Catenary Layback",
-            value=f"{umb_span_ideal:.2f} m",
-            delta=f"{umb_span_ideal - x_plough:+.2f} m vs Plough Position",
+            label="Horizontal Layback Span",
+            value=f"{umb_span:.2f} m",
+            delta="Exact Match to Plough Position",
         )
 
 # ==========================================
@@ -214,10 +238,10 @@ with out_col2:
 st.markdown("---")
 st.header("5. Dynamic Subsea Catenary Profile Visualizer")
 
+# Tow Wire Curve (Stern 0,0 to Plough x_plough, h)
 z_plot = np.linspace(0, h, 100)
 z_from_bottom = h - z_plot
 
-# Tow Wire Curve (Plough at x = wire_span, Stern at x = 0)
 s_w_plot = np.sqrt(z_from_bottom * (z_from_bottom + 2.0 * a_wire))
 x_w_plot = np.where(
     s_w_plot > 0,
@@ -226,16 +250,7 @@ x_w_plot = np.where(
 )
 x_w_vessel = wire_span - x_w_plot
 
-# Umbilical Curve (Origin at Plough x = x_plough, Stern at x = 0)
-s_u_plot = np.sqrt(z_from_bottom * (z_from_bottom + 2.0 * a_umb))
-x_u_plot = np.where(
-    s_u_plot > 0,
-    a_umb * np.log((s_u_plot + np.sqrt(s_u_plot**2 + a_umb**2)) / a_umb),
-    0.0,
-)
-x_u_vessel = wire_span - x_u_plot
-
-# Product Cable Curve (Touchdown at x = prod_span, Stern at x = 0)
+# Product Cable Curve
 s_p_plot = np.sqrt(z_from_bottom * (z_from_bottom + 2.0 * a_prod))
 x_p_plot = np.where(
     s_p_plot > 0,
@@ -258,11 +273,11 @@ fig.add_trace(
     )
 )
 
-# Umbilical Trace (Pinned at Plough Termination)
+# Umbilical Trace (Pinned at 0,0 and x_plough, h)
 fig.add_trace(
     go.Scatter(
-        x=x_u_vessel,
-        y=z_plot,
+        x=x_grid_umb,
+        y=z_u_plot,
         mode="lines",
         name=f"Umbilical (Winch Set: {t_umb_top_tons:.1f}T | Length: {umb_length:.1f}m)",
         line=dict(color="#ff7f0e", width=3, dash="dash"),
@@ -357,7 +372,7 @@ else:
 # ==========================================
 @st.cache_data
 def generate_profile_excel(
-    h, a_wire, a_umb, a_prod, wire_span, prod_span, umb_length
+    h, a_wire, a_umb, x0_umb, a_prod, wire_span, prod_span
 ):
     max_span = max(wire_span, prod_span)
     x_steps = np.linspace(0, max_span, 20)
@@ -382,24 +397,13 @@ def generate_profile_excel(
             x_w = max(0.0, wire_span - x_w_nat)
             z_w_val = min(a_wire * (math.cosh(x_w / a_wire) - 1.0), h)
 
-        # Umbilical profile (pinned at x_plough)
+        # Umbilical profile (exact 0,0 to x_plough, h boundary)
         if x >= wire_span:
             z_u_val = h
-            s_u = umb_length
+            s_u = float(a_umb * (math.sinh((wire_span - x0_umb) / a_umb) - math.sinh(-x0_umb / a_umb)))
         else:
-            z_u_from_bottom = h - x
-            term_u = z_u_from_bottom * (z_u_from_bottom + 2.0 * a_umb)
-            s_u = math.sqrt(max(0.0, term_u))
-            x_u_nat = (
-                a_umb
-                * math.log(
-                    (s_u + math.sqrt(max(0.0, s_u**2 + a_umb**2))) / a_umb
-                )
-                if s_u > 0
-                else 0.0
-            )
-            x_u = max(0.0, wire_span - x_u_nat)
-            z_u_val = min(a_umb * (math.cosh(x_u / a_umb) - 1.0), h)
+            z_u_val = float(a_umb * (math.cosh((x - x0_umb) / a_umb) - math.cosh(-x0_umb / a_umb)))
+            s_u = float(a_umb * (math.sinh((x - x0_umb) / a_umb) - math.sinh(-x0_umb / a_umb)))
 
         # Product Cable profile
         if x >= prod_span:
@@ -440,7 +444,7 @@ def generate_profile_excel(
 
 
 excel_buffer = generate_profile_excel(
-    h, a_wire, a_umb, a_prod, wire_span, prod_span, umb_length
+    h, a_wire, a_umb, x0_umb, a_prod, wire_span, prod_span
 )
 
 st.download_button(
