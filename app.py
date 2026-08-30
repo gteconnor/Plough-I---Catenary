@@ -213,10 +213,13 @@ with out_col2:
 st.markdown("---")
 st.header("5. Dynamic Subsea Catenary Profile Visualizer")
 
+# Generate vertical depth from surface (z=0) down to seabed (z=h)
 z_plot = np.linspace(0, h, 100)
 
 # Tow Wire Trajectory
-s_w_plot = np.sqrt(z_plot * (z_plot + 2.0 * a_wire))
+# Calculate suspended length from surface drop (h - z)
+z_w_from_bottom = h - z_plot
+s_w_plot = np.sqrt(z_w_from_bottom * (z_w_from_bottom + 2.0 * a_wire))
 x_w_plot = np.where(
     s_w_plot > 0,
     a_wire * np.log((s_w_plot + np.sqrt(s_w_plot**2 + a_wire**2)) / a_wire),
@@ -225,7 +228,8 @@ x_w_plot = np.where(
 x_w_vessel = wire_span - x_w_plot
 
 # Umbilical Trajectory
-s_u_plot = np.sqrt(z_plot * (z_plot + 2.0 * a_umb))
+z_u_from_bottom = h - z_plot
+s_u_plot = np.sqrt(z_u_from_bottom * (z_u_from_bottom + 2.0 * a_umb))
 x_u_plot = np.where(
     s_u_plot > 0,
     a_umb * np.log((s_u_plot + np.sqrt(s_u_plot**2 + a_umb**2)) / a_umb),
@@ -234,7 +238,8 @@ x_u_plot = np.where(
 x_u_vessel = umb_span - x_u_plot
 
 # Product Cable Trajectory
-s_p_plot = np.sqrt(z_plot * (z_plot + 2.0 * a_prod))
+z_p_from_bottom = h - z_plot
+s_p_plot = np.sqrt(z_p_from_bottom * (z_p_from_bottom + 2.0 * a_prod))
 x_p_plot = np.where(
     s_p_plot > 0,
     a_prod * np.log((s_p_plot + np.sqrt(s_p_plot**2 + a_prod**2)) / a_prod),
@@ -292,7 +297,6 @@ fig.add_trace(
     )
 )
 
-# Layout adjustments for inverted depth axis & vessel at top-left
 fig.update_layout(
     title=dict(
         text="Subsea Catenary Profiles (Vessel Stern at Origin x=0, z=0)",
@@ -302,7 +306,7 @@ fig.update_layout(
     xaxis_title="Horizontal Distance from Vessel Stern (m)",
     yaxis=dict(
         title="Water Depth (m)",
-        autorange="reversed",  # Forces 0m (Surface) at Top, Depth (m) at Bottom
+        autorange="reversed",  # 0m at top, 150m at bottom
     ),
     xaxis=dict(
         range=[-10, max(wire_span, umb_span, prod_span) * 1.05],
