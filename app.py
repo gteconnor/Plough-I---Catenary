@@ -77,7 +77,7 @@ with col2:
             "Umbilical Submerged Wt (kg/m)", value=3.50, step=0.1
         )
         st.caption(
-            " Note: Umbilical horizontal span is pinned directly to the Tow Wire span."
+            "Note: Umbilical span is pinned to the plough location ($x_{\\text{plough}}$), yielding an independent payout length based on submerged weight."
         )
 
 with col3:
@@ -94,7 +94,7 @@ with col3:
         )
 
 # ==========================================
-# MATHEMATICAL ENGINE 1: TOW WIRE (DRIVES LAYBACK)
+# MATHEMATICAL ENGINE 1: TOW WIRE (ESTABLISHES PLOUGH LOCATION)
 # ==========================================
 T_bottom = T_bottom_tons * 9.81  # Convert to kN
 w_sub_wire = w_air * (1.0 - (1025.0 / 7850.0))
@@ -120,12 +120,12 @@ T_wire_surface_tons = T_wire_surface / 9.81
 # ==========================================
 # MATHEMATICAL ENGINE 2: UMBILICAL (PINNED TO PLOUGH SPAN)
 # ==========================================
-# Force umbilical span to match wire span
-umb_span = wire_span
+# The umbilical terminates at the plough (same x-span as tow wire)
+x_plough = wire_span
 w_umb_kn = (w_umb_sub * 9.81) / 1000.0  # kN/m
 
 
-# Bisection solver to find catenary parameter a_umb where x(h) == wire_span
+# Bisection solver to find catenary parameter a_umb where x(h) == x_plough
 def solve_a_umb(target_span, h_depth):
     low = 1e-3
     high = 100000.0
@@ -140,18 +140,17 @@ def solve_a_umb(target_span, h_depth):
     return (low + high) / 2.0
 
 
-a_umb = solve_a_umb(umb_span, h)
+a_umb = solve_a_umb(x_plough, h)
 umb_length = math.sqrt(h * (h + 2.0 * a_umb))
+umb_span = x_plough
 
-# Derived umbilical angles at bottom (plough chute) and top (vessel deck)
-tan_umb_bottom = math.sqrt(umb_length**2) / a_umb  # sin/cos relationship
-umb_bottom_angle_horiz = math.degrees(math.atan(h / umb_span))
 umb_surface_angle_vert = 90.0 - math.degrees(
     math.atan(umb_length / a_umb)
 )
 
 H_umb = a_umb * w_umb_kn
 T_umb_surface = w_umb_kn * h + H_umb
+payout_delta = umb_length - wire_length
 
 # ==========================================
 # MATHEMATICAL ENGINE 3: PRODUCT CABLE
@@ -191,7 +190,7 @@ with out_col1:
             value=f"{wire_surface_angle_vertical:.2f}°",
         )
         st.metric(
-            label="Plough Horizontal Layback Span",
+            label="Plough Layback Span (x_plough)",
             value=f"{wire_span:.2f} m",
         )
 
@@ -201,6 +200,7 @@ with out_col2:
         st.metric(
             label="Required Umbilical Payout Length",
             value=f"{umb_length:.2f} m",
+            delta=f"{payout_delta:+.2f} m vs Tow Wire",
         )
         st.metric(
             label="Total Hanging Weight at Deck",
@@ -211,9 +211,9 @@ with out_col2:
             value=f"{umb_surface_angle_vert:.2f}°",
         )
         st.metric(
-            label="Umbilical Horizontal Span",
+            label="Horizontal Layback Span",
             value=f"{umb_span:.2f} m",
-            delta="Matched to Plough",
+            delta="Matched to Plough Position",
         )
 
 # ==========================================
@@ -234,7 +234,7 @@ x_w_plot = np.where(
 )
 x_w_vessel = wire_span - x_w_plot
 
-# Umbilical Trajectory (Pinned to Plough Span)
+# Umbilical Trajectory (Pinned to x_plough)
 z_u_from_bottom = h - z_plot
 s_u_plot = np.sqrt(z_u_from_bottom * (z_u_from_bottom + 2.0 * a_umb))
 x_u_plot = np.where(
@@ -262,7 +262,7 @@ fig.add_trace(
         x=x_w_vessel,
         y=z_plot,
         mode="lines",
-        name=f"Tow Wire (Span: {wire_span:.1f}m)",
+        name=f"Tow Wire (Span: {wire_span:.1f}m | Length: {wire_length:.1f}m)",
         line=dict(color="#1f77b4", width=3),
         hovertemplate="<b>Tow Wire</b><br>Horizontal Distance: %{x:.2f} m<br>Water Depth: %{y:.2f} m<extra></extra>",
     )
@@ -274,7 +274,7 @@ fig.add_trace(
         x=x_u_vessel,
         y=z_plot,
         mode="lines",
-        name=f"Umbilical (Span: {umb_span:.1f}m)",
+        name=f"Umbilical (Span: {umb_span:.1f}m | Length: {umb_length:.1f}m)",
         line=dict(color="#ff7f0e", width=3, dash="dash"),
         hovertemplate="<b>Umbilical</b><br>Horizontal Distance: %{x:.2f} m<br>Water Depth: %{y:.2f} m<extra></extra>",
     )
@@ -286,19 +286,19 @@ fig.add_trace(
         x=x_p_vessel,
         y=z_plot,
         mode="lines",
-        name=f"Product Cable (Span: {prod_span:.1f}m)",
+        name=f"Product Cable (Span: {prod_span:.1f}m | Length: {prod_length:.1f}m)",
         line=dict(color="#2ca02c", width=3, dash="dot"),
         hovertemplate="<b>Product Cable</b><br>Horizontal Distance: %{x:.2f} m<br>Water Depth: %{y:.2f} m<extra></extra>",
     )
 )
 
-# Touchdown Markers at Seabed
+# Touchdown / Termination Markers
 fig.add_trace(
     go.Scatter(
         x=[wire_span, umb_span, prod_span],
         y=[h, h, h],
         mode="markers",
-        name="Seabed Termination / Chute Points",
+        name="Seabed Terminations",
         marker=dict(
             size=10, symbol="diamond", color=["#1f77b4", "#ff7f0e", "#2ca02c"]
         ),
@@ -308,7 +308,7 @@ fig.add_trace(
 
 fig.update_layout(
     title=dict(
-        text="Subsea Catenary Profiles (Plough Connected: Wire & Umbilical Spans Equal)",
+        text="Subsea Catenary Profiles (Plough Connected: Wire & Umbilical Terminate at x_plough)",
         x=0.0,
         font=dict(size=18),
     ),
@@ -443,7 +443,6 @@ excel_buffer = generate_profile_excel(h, a_wire, a_umb, a_prod)
 st.download_button(
     label="📥 Export Dynamic Profiling Curves to Excel (.xlsx)",
     data=excel_buffer,
-    file_name="Independent_Plough_Report.xlsx",
+    file_name="Plough_Catenary_Report.xlsx",
     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
 )
-
