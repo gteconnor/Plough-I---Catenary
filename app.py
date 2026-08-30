@@ -315,8 +315,8 @@ fig.update_layout(
     height=550,
     hovermode="closest",
     legend=dict(
-        yanchor="bottom",
-        y=0.02,
+        yanchor="top",
+        y=0.98,
         xanchor="right",
         x=0.98,
         bgcolor="rgba(0, 0, 0, 0.5)",
