@@ -1,21 +1,24 @@
-import streamlit as st
-import math
-import pandas as pd
 import io
+import math
 import os
+import numpy as np
+import pandas as pd
+import plotly.graph_objects as go
+import streamlit as st
 
 # Browser tab configuration
-st.set_page_config(page_title="GC's Plough Catenary Web Analyzer", layout="wide")
+st.set_page_config(
+    page_title="GC's Plough Catenary Web Analyzer", layout="wide"
+)
 
-# CUSTOM CSS: Reduced top spacing layout parameters by half
+# Custom CSS styling
 st.markdown(
     """
     <style>
         .block-container {
-            padding-top: 2rem !important;
+            padding-top: 1.5rem !important;
             padding-bottom: 1rem !important;
         }
-        /* Aligns the logo vertically with the title text */
         .logo-container {
             display: flex;
             align-items: center;
@@ -26,59 +29,84 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# --- FIXED HEADER LAYOUT: Added ratio dimensions [4, 1] ---
+# --- HEADER LAYOUT ---
 title_col, logo_col = st.columns([4, 1])
 
 with title_col:
     st.title("⚓ GC's Subsea Trenching Operational Web Engine - For Kearnsy")
 
 with logo_col:
-    # Checks for either standard .jpg or .jpeg file extensions
-    logo_filename = "logo.jpg"
-    if not os.path.exists(logo_filename):
-        logo_filename = "logo.jpeg"
-        
+    logo_filename = "logo.jpg" if os.path.exists("logo.jpg") else "logo.jpeg"
     if os.path.exists(logo_filename):
         st.image(logo_filename, width=150)
     else:
-        st.caption("*(Upload logo.jpg or logo.jpeg to GitHub)*")
+        st.caption("*(Upload logo.jpg or logo.jpeg to repository)*")
 
 st.markdown("---")
 
-# Layout columns for data entry (3 separate columns)
+# --- INPUT SECTION ---
 col1, col2, col3 = st.columns(3)
 
 with col1:
-    st.header("1. Tow Wire & Plough Data")
-    h = st.number_input("Water Depth (m)", value=150.0, step=10.0, key="depth")
-    td_angle = st.number_input("Tow Wire Target Seabed Angle (°)", value=15.0, min_value=0.1, max_value=89.9, step=1.0)
-    w_air = st.number_input("Wire Air Weight (kg/m)", value=9.48, step=0.1)
-    T_bottom_tons = st.number_input("Target Plough Tow Force (Tons)", value=51.0, step=5.0)
+    with st.container(border=True):
+        st.header("1. Tow Wire & Plough Data")
+        h = st.number_input(
+            "Water Depth (m)", value=150.0, step=10.0, key="depth"
+        )
+        td_angle = st.number_input(
+            "Tow Wire Target Seabed Angle (°)",
+            value=15.0,
+            min_value=0.1,
+            max_value=89.9,
+            step=1.0,
+        )
+        w_air = st.number_input("Wire Air Weight (kg/m)", value=9.48, step=0.1)
+        T_bottom_tons = st.number_input(
+            "Target Plough Tow Force (Tons)", value=51.0, step=5.0
+        )
 
 with col2:
-    st.header("2. Free-Rendering Umbilical Data")
-    w_umb_sub = st.number_input("Umbilical Submerged Wt (kg/m)", value=3.50, step=0.1)
-    umb_td_angle = st.number_input("Umbilical Allowable Angle at Plough Chute (° from Horiz)", value=60.0, min_value=5.0, max_value=89.9, step=1.0)
+    with st.container(border=True):
+        st.header("2. Free-Rendering Umbilical Data")
+        w_umb_sub = st.number_input(
+            "Umbilical Submerged Wt (kg/m)", value=3.50, step=0.1
+        )
+        umb_td_angle = st.number_input(
+            "Umbilical Allowable Angle at Plough Chute (° from Horiz)",
+            value=60.0,
+            min_value=5.0,
+            max_value=89.9,
+            step=1.0,
+        )
 
 with col3:
-    st.header("3. Product Cable Specification")
-    w_prod_tkm = st.number_input("Cable Weight In Water (T/km)", value=4.5, step=0.5)
-    cable_dia = st.number_input("Cable Diameter (mm)", value=120.0, step=5.0)
-    t_top_prod = st.number_input("Product Top Tension (kN)", value=40.0, step=5.0)
+    with st.container(border=True):
+        st.header("3. Product Cable Specification")
+        w_prod_tkm = st.number_input(
+            "Cable Weight In Water (T/km)", value=4.5, step=0.5
+        )
+        cable_dia = st.number_input(
+            "Cable Diameter (mm)", value=120.0, step=5.0
+        )
+        t_top_prod = st.number_input(
+            "Product Top Tension (kN)", value=40.0, step=5.0
+        )
 
 # ==========================================
 # MATHEMATICAL ENGINE 1: INDEPENDENT TOW WIRE
 # ==========================================
 T_bottom = T_bottom_tons * 9.81  # Convert to kN
-w_sub_wire = w_air * (1 - 1025 / 7850)
-w_wire_kn = (w_sub_wire * 9.81) / 1000  # kN/m
+w_sub_wire = w_air * (1.0 - (1025.0 / 7850.0))
+w_wire_kn = (w_sub_wire * 9.81) / 1000.0  # kN/m
 
 alpha_rad = math.radians(td_angle)
 H_wire = T_bottom * math.cos(alpha_rad)
 a_wire = H_wire / w_wire_kn
 
-wire_length = math.sqrt(h * (h + 2 * a_wire))
-wire_span = a_wire * math.log((wire_length + math.sqrt(wire_length**2 + a_wire**2)) / a_wire)
+wire_length = math.sqrt(h * (h + 2.0 * a_wire))
+wire_span = a_wire * math.log(
+    (wire_length + math.sqrt(wire_length**2 + a_wire**2)) / a_wire
+)
 
 tan_wire_surface = (wire_length + a_wire * math.tan(alpha_rad)) / a_wire
 wire_surface_angle_horiz = math.degrees(math.atan(tan_wire_surface))
@@ -91,36 +119,46 @@ T_wire_surface_tons = T_wire_surface / 9.81
 # ==========================================
 # MATHEMATICAL ENGINE 2: FREE UMBILICAL
 # ==========================================
-w_umb_kn = (w_umb_sub * 9.81) / 1000  # kN/m
+w_umb_kn = (w_umb_sub * 9.81) / 1000.0  # kN/m
 umb_alpha_rad = math.radians(umb_td_angle)
 
 sin_alpha = math.sin(umb_alpha_rad)
 cos_alpha = math.cos(umb_alpha_rad)
 
-if umb_td_angle == 90.0:
-    a_umb = h
+if umb_td_angle >= 89.9:
+    a_umb = 1e-4
 else:
     a_umb = h / (1.0 / cos_alpha - 1.0) if cos_alpha > 0 else h
 
-if a_umb <= 0 or math.isnan(a_umb):
-    a_umb = 10.0
+a_umb = max(a_umb, 1e-4)
 
-umb_length = math.sqrt(h * (h + 2 * a_umb))
-umb_span = a_umb * math.log((umb_length + math.sqrt(umb_length**2 + a_umb**2)) / a_umb) if a_umb > 0 else 0.0
+umb_length = math.sqrt(h * (h + 2.0 * a_umb))
+umb_span = a_umb * math.log(
+    (umb_length + math.sqrt(umb_length**2 + a_umb**2)) / a_umb
+)
 
 H_umb = a_umb * w_umb_kn
 tan_umb_surface = (umb_length + a_umb * math.tan(umb_alpha_rad)) / a_umb
 umb_surface_angle_horiz = math.degrees(math.atan(tan_umb_surface))
 umb_surface_angle_vertical = 90.0 - umb_surface_angle_horiz
 
-T_umb_surface = w_umb_kn * h + (H_umb / cos_alpha if cos_alpha > 0 else H_umb)
+T_umb_surface = w_umb_kn * h + (
+    H_umb / cos_alpha if cos_alpha > 0 else H_umb
+)
 
 # ==========================================
 # MATHEMATICAL ENGINE 3: PRODUCT CABLE
 # ==========================================
-w_prod_kn_m = (w_prod_tkm * 9.81) / 1000
+w_prod_kn_m = (w_prod_tkm * 9.81) / 1000.0
 tension_loss = w_prod_kn_m * h
 t_seabed_prod = t_top_prod - tension_loss
+
+# Product Cable Catenary Parameter (under top tension)
+a_prod = max(t_top_prod / w_prod_kn_m, 1e-4)
+prod_length = math.sqrt(h * (h + 2.0 * a_prod))
+prod_span = a_prod * math.log(
+    (prod_length + math.sqrt(prod_length**2 + a_prod**2)) / a_prod
+)
 
 # ==========================================
 # DISPLAY DASHBOARD
@@ -131,68 +169,259 @@ st.header("4. Operational Performance Summary")
 out_col1, out_col2 = st.columns(2)
 
 with out_col1:
-    st.subheader("⛓️ Tow Wire System Outputs")
-    st.metric(label="Required Tow Wire Payout Length", value=f"{wire_length:.2f} m")
-    st.metric(label="Winch Surface Tension Required", value=f"{T_wire_surface_tons:.1f} Tons", delta=f"{T_wire_surface:.1f} kN")
-    st.metric(label="Vessel Wire Entry Angle (from VERTICAL)", value=f"{wire_surface_angle_vertical:.2f}°")
-    st.metric(label="Wire Horizontal Span", value=f"{wire_span:.2f} m")
+    with st.container(border=True):
+        st.subheader("⛓️ Tow Wire System Outputs")
+        st.metric(
+            label="Required Tow Wire Payout Length",
+            value=f"{wire_length:.2f} m",
+        )
+        st.metric(
+            label="Winch Surface Tension Required",
+            value=f"{T_wire_surface_tons:.1f} Tons",
+            delta=f"{T_wire_surface:.1f} kN",
+        )
+        st.metric(
+            label="Vessel Wire Entry Angle (from VERTICAL)",
+            value=f"{wire_surface_angle_vertical:.2f}°",
+        )
+        st.metric(
+            label="Wire Horizontal Span", value=f"{wire_span:.2f} m"
+        )
 
 with out_col2:
-    st.subheader("🔌 Free-Rendering Umbilical Outputs")
-    st.metric(label="Calculated Umbilical Payout Length", value=f"{umb_length:.2f} m")
-    st.metric(label="Total Vertical Hanging Weight at Deck", value=f"{T_umb_surface:.2f} kN")
-    st.metric(label="Vessel Umbilical Departure Angle (from VERTICAL)", value=f"{umb_surface_angle_vertical:.2f}°")
-    st.metric(label="Umbilical Horizontal Span", value=f"{umb_span:.2f} m")
+    with st.container(border=True):
+        st.subheader("🔌 Free-Rendering Umbilical Outputs")
+        st.metric(
+            label="Calculated Umbilical Payout Length",
+            value=f"{umb_length:.2f} m",
+        )
+        st.metric(
+            label="Total Vertical Hanging Weight at Deck",
+            value=f"{T_umb_surface:.2f} kN",
+        )
+        st.metric(
+            label="Vessel Umbilical Departure Angle (from VERTICAL)",
+            value=f"{umb_surface_angle_vertical:.2f}°",
+        )
+        st.metric(
+            label="Umbilical Horizontal Span", value=f"{umb_span:.2f} m"
+        )
 
+# ==========================================
+# 2D INTERACTIVE CATENARY PROFILE PLOT
+# ==========================================
 st.markdown("---")
-st.header("5. Product Cable Integrity Matrix")
+st.header("5. Dynamic Subsea Catenary Profile Visualizer")
+
+z_plot = np.linspace(0, h, 100)
+
+# Tow Wire Trajectory
+s_w_plot = np.sqrt(z_plot * (z_plot + 2.0 * a_wire))
+x_w_plot = np.where(
+    s_w_plot > 0,
+    a_wire
+    * np.log((s_w_plot + np.sqrt(s_w_plot**2 + a_wire**2)) / a_wire),
+    0.0,
+)
+
+# Umbilical Trajectory
+s_u_plot = np.sqrt(z_plot * (z_plot + 2.0 * a_umb))
+x_u_plot = np.where(
+    s_u_plot > 0,
+    a_umb * np.log((s_u_plot + np.sqrt(s_u_plot**2 + a_umb**2)) / a_umb),
+    0.0,
+)
+
+# Product Cable Trajectory
+s_p_plot = np.sqrt(z_plot * (z_plot + 2.0 * a_prod))
+x_p_plot = np.where(
+    s_p_plot > 0,
+    a_prod * np.log((s_p_plot + np.sqrt(s_p_plot**2 + a_prod**2)) / a_prod),
+    0.0,
+)
+
+fig = go.Figure()
+
+# Tow Wire (Steel Blue)
+fig.add_trace(
+    go.Scatter(
+        x=x_w_plot,
+        y=-z_plot,
+        mode="lines",
+        name=f"Tow Wire (Span: {wire_span:.1f}m)",
+        line=dict(color="#1f77b4", width=3),
+        hovertemplate="<b>Tow Wire</b><br>Offset: %{x:.2f} m<br>Depth: %{y:.2f} m<extra></extra>",
+    )
+)
+
+# Umbilical (Orange)
+fig.add_trace(
+    go.Scatter(
+        x=x_u_plot,
+        y=-z_plot,
+        mode="lines",
+        name=f"Umbilical (Span: {umb_span:.1f}m)",
+        line=dict(color="#ff7f0e", width=3, dash="dash"),
+        hovertemplate="<b>Umbilical</b><br>Offset: %{x:.2f} m<br>Depth: %{y:.2f} m<extra></extra>",
+    )
+)
+
+# Product Cable (Green)
+fig.add_trace(
+    go.Scatter(
+        x=x_p_plot,
+        y=-z_plot,
+        mode="lines",
+        name=f"Product Cable (Span: {prod_span:.1f}m)",
+        line=dict(color="#2ca02c", width=3, dash="dot"),
+        hovertemplate="<b>Product Cable</b><br>Offset: %{x:.2f} m<br>Depth: %{y:.2f} m<extra></extra>",
+    )
+)
+
+# Touchdown Markers
+fig.add_trace(
+    go.Scatter(
+        x=[wire_span, umb_span, prod_span],
+        y=[-h, -h, -h],
+        mode="markers",
+        name="Seabed Touchdown Points",
+        marker=dict(size=10, symbol="diamond", color=["#1f77b4", "#ff7f0e", "#2ca02c"]),
+        hoverinfo="skip",
+    )
+)
+
+fig.update_layout(
+    title=dict(
+        text="Subsea Line Curvature & Spatial Offset Comparison",
+        x=0.0,
+        font=dict(size=18),
+    ),
+    xaxis_title="Horizontal Offset Distance from Vessel Stern (m)",
+    yaxis_title="Water Depth (m)",
+    template="plotly_white",
+    height=550,
+    hovermode="closest",
+    legend=dict(
+        yanchor="bottom",
+        y=0.02,
+        xanchor="right",
+        x=0.98,
+        bgcolor="rgba(255, 255, 255, 0.8)",
+    ),
+)
+
+# Draw Seabed Reference Line
+fig.add_shape(
+    type="line",
+    x0=0,
+    y0=-h,
+    x1=max(wire_span, umb_span, prod_span) * 1.1,
+    y1=-h,
+    line=dict(color="Brown", width=2, dash="dashdot"),
+)
+
+st.plotly_chart(fig, use_container_width=True)
+
+# ==========================================
+# CABLE INTEGRITY MATRIX
+# ==========================================
+st.markdown("---")
+st.header("6. Product Cable Integrity Matrix")
 if t_seabed_prod < 0:
-    st.error(f"⚠️ Cable Seabed Residual Tension: {t_seabed_prod:.2f} kN — CRITICAL RISK OF CABLE BUCKLING INSIDE CHUTE!")
+    st.error(
+        f"⚠️ Cable Seabed Residual Tension: {t_seabed_prod:.2f} kN — CRITICAL RISK OF CABLE BUCKLING INSIDE CHUTE!"
+    )
 elif t_seabed_prod < 5:
-    st.warning(f"⚠️ Cable Seabed Residual Tension: {t_seabed_prod:.2f} kN — Low Tension Limit Warning.")
+    st.warning(
+        f"⚠️ Cable Seabed Residual Tension: {t_seabed_prod:.2f} kN — Low Tension Limit Warning."
+    )
 else:
-    st.success(f"✅ Cable Seabed Residual Tension: {t_seabed_prod:.2f} kN — Tension bounds stable.")
+    st.success(
+        f"✅ Cable Seabed Residual Tension: {t_seabed_prod:.2f} kN — Tension bounds stable."
+    )
+
 
 # ==========================================
-# PROFILE GENERATOR FOR EXCEL EXPORT
+# PROFILE GENERATOR & EXCEL EXPORT
 # ==========================================
-max_rows = int(h) // 10 + 1
-profile_data = []
-for i in range(max_rows):
-    z = i * 10
-    if z > h: z = h
-    
-    s_w = math.sqrt(z * (z + 2 * a_wire))
-    x_w = a_wire * math.log((s_w + math.sqrt(s_w**2 + a_wire**2)) / a_wire) if s_w > 0 else 0.0
-    ang_w_horiz = math.degrees(math.atan(s_w / a_wire))
-    ang_w_vertical = 90.0 - ang_w_horiz if z > 0 else 90.0
-    
-    s_u = math.sqrt(z * (z + 2 * a_umb))
-    x_u = a_umb * math.log((s_u + math.sqrt(s_u**2 + a_umb**2)) / a_umb) if s_u > 0 and a_umb > 0 else 0.0
-    ang_u_horiz = math.degrees(math.atan(s_u / a_umb)) if a_umb > 0 else 90.0
-    ang_u_vertical = 90.0 - ang_u_horiz if z > 0 else 90.0
-    
-    profile_data.append({
-        "Vertical Drop (z) [m]": z,
-        "Wire Suspended Length [m]": round(s_w, 2),
-        "Wire Horizontal Dist [m]": round(x_w, 2),
-        "Wire Angle (from Vertical) [deg]": round(ang_w_vertical, 2),
-        "Umbilical Suspended Length [m]": round(s_u, 2),
-        "Umbilical Horizontal Dist [m]": round(x_u, 2),
-        "Umbilical Angle (from Vertical) [deg]": round(ang_u_vertical, 2),
-    })
+@st.cache_data
+def generate_profile_excel(h, a_wire, a_umb, a_prod):
+    z_steps = np.arange(0, h, 10.0).tolist()
+    if not z_steps or z_steps[-1] != h:
+        z_steps.append(h)
 
-df_profile = pd.DataFrame(profile_data)
+    profile_data = []
+    for z in z_steps:
+        # Tow Wire profile
+        s_w = math.sqrt(z * (z + 2.0 * a_wire))
+        x_w = (
+            a_wire
+            * math.log((s_w + math.sqrt(s_w**2 + a_wire**2)) / a_wire)
+            if s_w > 0
+            else 0.0
+        )
+        ang_w_horiz = math.degrees(math.atan(s_w / a_wire))
+        ang_w_vertical = 90.0 - ang_w_horiz if z > 0 else 90.0
 
-buffer = io.BytesIO()
-with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
-    df_profile.to_excel(writer, index=False, sheet_name="Catenary Profile Matrix")
-buffer.seek(0)
+        # Umbilical profile
+        s_u = math.sqrt(z * (z + 2.0 * a_umb))
+        x_u = (
+            a_umb
+            * math.log((s_u + math.sqrt(s_u**2 + a_umb**2)) / a_umb)
+            if s_u > 0
+            else 0.0
+        )
+        ang_u_horiz = math.degrees(math.atan(s_u / a_umb))
+        ang_u_vertical = 90.0 - ang_u_horiz if z > 0 else 90.0
+
+        # Product Cable profile
+        s_p = math.sqrt(z * (z + 2.0 * a_prod))
+        x_p = (
+            a_prod
+            * math.log((s_p + math.sqrt(s_p**2 + a_prod**2)) / a_prod)
+            if s_p > 0
+            else 0.0
+        )
+        ang_p_horiz = math.degrees(math.atan(s_p / a_prod))
+        ang_p_vertical = 90.0 - ang_p_horiz if z > 0 else 90.0
+
+        profile_data.append(
+            {
+                "Vertical Drop (z) [m]": round(z, 2),
+                "Wire Suspended Length [m]": round(s_w, 2),
+                "Wire Horizontal Dist [m]": round(x_w, 2),
+                "Wire Angle (from Vertical) [deg]": round(
+                    ang_w_vertical, 2
+                ),
+                "Umbilical Suspended Length [m]": round(s_u, 2),
+                "Umbilical Horizontal Dist [m]": round(x_u, 2),
+                "Umbilical Angle (from Vertical) [deg]": round(
+                    ang_u_vertical, 2
+                ),
+                "Product Cable Suspended Length [m]": round(s_p, 2),
+                "Product Cable Horizontal Dist [m]": round(x_p, 2),
+                "Product Cable Angle (from Vertical) [deg]": round(
+                    ang_p_vertical, 2
+                ),
+            }
+        )
+
+    df_profile = pd.DataFrame(profile_data)
+    buffer = io.BytesIO()
+    with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
+        df_profile.to_excel(
+            writer, index=False, sheet_name="Catenary Profile Matrix"
+        )
+    buffer.seek(0)
+    return buffer
+
+
+excel_buffer = generate_profile_excel(h, a_wire, a_umb, a_prod)
 
 st.download_button(
     label="📥 Export Dynamic Profiling Curves to Excel (.xlsx)",
-    data=buffer,
+    data=excel_buffer,
     file_name="Independent_Plough_Report.xlsx",
-    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
 )
 
