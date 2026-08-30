@@ -4,6 +4,7 @@ import os
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
+from scipy.optimize import scipy_fsolve if False else None
 import streamlit as st
 
 # Browser tab configuration
@@ -67,16 +68,12 @@ with col1:
 
 with col2:
     with st.container(border=True):
-        st.header("2. Free-Rendering Umbilical Data")
+        st.header("2. Umbilical Specification")
         w_umb_sub = st.number_input(
             "Umbilical Submerged Wt (kg/m)", value=3.50, step=0.1
         )
-        umb_td_angle = st.number_input(
-            "Umbilical Allowable Angle at Plough Chute (° from Horiz)",
-            value=60.0,
-            min_value=5.0,
-            max_value=89.9,
-            step=1.0,
+        st.caption(
+            " Note: Umbilical horizontal span is pinned directly to the Tow Wire span."
         )
 
 with col3:
@@ -93,7 +90,7 @@ with col3:
         )
 
 # ==========================================
-# MATHEMATICAL ENGINE 1: INDEPENDENT TOW WIRE
+# MATHEMATICAL ENGINE 1: TOW WIRE (DRIVES LAYBACK)
 # ==========================================
 T_bottom = T_bottom_tons * 9.81  # Convert to kN
 w_sub_wire = w_air * (1.0 - (1025.0 / 7850.0))
@@ -117,34 +114,40 @@ T_wire_surface = math.sqrt(H_wire**2 + V_wire_top**2)
 T_wire_surface_tons = T_wire_surface / 9.81
 
 # ==========================================
-# MATHEMATICAL ENGINE 2: FREE UMBILICAL
+# MATHEMATICAL ENGINE 2: UMBILICAL (PINNED TO PLOUGH SPAN)
 # ==========================================
+# Force umbilical span to match wire span
+umb_span = wire_span
 w_umb_kn = (w_umb_sub * 9.81) / 1000.0  # kN/m
-umb_alpha_rad = math.radians(umb_td_angle)
 
-sin_alpha = math.sin(umb_alpha_rad)
-cos_alpha = math.cos(umb_alpha_rad)
 
-if umb_td_angle >= 89.9:
-    a_umb = 1e-4
-else:
-    a_umb = h / (1.0 / cos_alpha - 1.0) if cos_alpha > 0 else h
+# Bisection solver to find catenary parameter a_umb where x(h) == wire_span
+def solve_a_umb(target_span, h_depth):
+    low = 1e-3
+    high = 100000.0
+    for _ in range(100):
+        mid = (low + high) / 2.0
+        s = math.sqrt(h_depth * (h_depth + 2.0 * mid))
+        x = mid * math.log((s + math.sqrt(s**2 + mid**2)) / mid)
+        if x < target_span:
+            low = mid
+        else:
+            high = mid
+    return (low + high) / 2.0
 
-a_umb = max(a_umb, 1e-4)
 
+a_umb = solve_a_umb(umb_span, h)
 umb_length = math.sqrt(h * (h + 2.0 * a_umb))
-umb_span = a_umb * math.log(
-    (umb_length + math.sqrt(umb_length**2 + a_umb**2)) / a_umb
+
+# Derived umbilical angles at bottom (plough chute) and top (vessel deck)
+tan_umb_bottom = math.sqrt(umb_length**2) / a_umb  # sin/cos relationship
+umb_bottom_angle_horiz = math.degrees(math.atan(h / umb_span))
+umb_surface_angle_vert = 90.0 - math.degrees(
+    math.atan(umb_length / a_umb)
 )
 
 H_umb = a_umb * w_umb_kn
-tan_umb_surface = (umb_length + a_umb * math.tan(umb_alpha_rad)) / a_umb
-umb_surface_angle_horiz = math.degrees(math.atan(tan_umb_surface))
-umb_surface_angle_vertical = 90.0 - umb_surface_angle_horiz
-
-T_umb_surface = w_umb_kn * h + (
-    H_umb / cos_alpha if cos_alpha > 0 else H_umb
-)
+T_umb_surface = w_umb_kn * h + H_umb
 
 # ==========================================
 # MATHEMATICAL ENGINE 3: PRODUCT CABLE
@@ -153,7 +156,6 @@ w_prod_kn_m = (w_prod_tkm * 9.81) / 1000.0
 tension_loss = w_prod_kn_m * h
 t_seabed_prod = t_top_prod - tension_loss
 
-# Product Cable Catenary Parameter (under top tension)
 a_prod = max(t_top_prod / w_prod_kn_m, 1e-4)
 prod_length = math.sqrt(h * (h + 2.0 * a_prod))
 prod_span = a_prod * math.log(
@@ -185,26 +187,29 @@ with out_col1:
             value=f"{wire_surface_angle_vertical:.2f}°",
         )
         st.metric(
-            label="Wire Horizontal Span", value=f"{wire_span:.2f} m"
+            label="Plough Horizontal Layback Span",
+            value=f"{wire_span:.2f} m",
         )
 
 with out_col2:
     with st.container(border=True):
-        st.subheader("🔌 Free-Rendering Umbilical Outputs")
+        st.subheader("🔌 Umbilical System Outputs (Pinned to Plough)")
         st.metric(
-            label="Calculated Umbilical Payout Length",
+            label="Required Umbilical Payout Length",
             value=f"{umb_length:.2f} m",
         )
         st.metric(
-            label="Total Vertical Hanging Weight at Deck",
+            label="Total Hanging Weight at Deck",
             value=f"{T_umb_surface:.2f} kN",
         )
         st.metric(
-            label="Vessel Umbilical Departure Angle (from VERTICAL)",
-            value=f"{umb_surface_angle_vertical:.2f}°",
+            label="Vessel Departure Angle (from VERTICAL)",
+            value=f"{umb_surface_angle_vert:.2f}°",
         )
         st.metric(
-            label="Umbilical Horizontal Span", value=f"{umb_span:.2f} m"
+            label="Umbilical Horizontal Span",
+            value=f"{umb_span:.2f} m",
+            delta="Matched to Plough",
         )
 
 # ==========================================
@@ -213,11 +218,9 @@ with out_col2:
 st.markdown("---")
 st.header("5. Dynamic Subsea Catenary Profile Visualizer")
 
-# Generate vertical depth from surface (z=0) down to seabed (z=h)
 z_plot = np.linspace(0, h, 100)
 
 # Tow Wire Trajectory
-# Calculate suspended length from surface drop (h - z)
 z_w_from_bottom = h - z_plot
 s_w_plot = np.sqrt(z_w_from_bottom * (z_w_from_bottom + 2.0 * a_wire))
 x_w_plot = np.where(
@@ -227,7 +230,7 @@ x_w_plot = np.where(
 )
 x_w_vessel = wire_span - x_w_plot
 
-# Umbilical Trajectory
+# Umbilical Trajectory (Pinned to Plough Span)
 z_u_from_bottom = h - z_plot
 s_u_plot = np.sqrt(z_u_from_bottom * (z_u_from_bottom + 2.0 * a_umb))
 x_u_plot = np.where(
@@ -285,31 +288,33 @@ fig.add_trace(
     )
 )
 
-# Touchdown Markers at Seabed (z = h)
+# Touchdown Markers at Seabed
 fig.add_trace(
     go.Scatter(
         x=[wire_span, umb_span, prod_span],
         y=[h, h, h],
         mode="markers",
-        name="Seabed Touchdown Points",
-        marker=dict(size=10, symbol="diamond", color=["#1f77b4", "#ff7f0e", "#2ca02c"]),
+        name="Seabed Termination / Chute Points",
+        marker=dict(
+            size=10, symbol="diamond", color=["#1f77b4", "#ff7f0e", "#2ca02c"]
+        ),
         hoverinfo="skip",
     )
 )
 
 fig.update_layout(
     title=dict(
-        text="Subsea Catenary Profiles (Vessel Stern at Origin x=0, z=0)",
+        text="Subsea Catenary Profiles (Plough Connected: Wire & Umbilical Spans Equal)",
         x=0.0,
         font=dict(size=18),
     ),
     xaxis_title="Horizontal Distance from Vessel Stern (m)",
     yaxis=dict(
         title="Water Depth (m)",
-        autorange="reversed",  # 0m at top, 150m at bottom
+        autorange="reversed",
     ),
     xaxis=dict(
-        range=[-10, max(wire_span, umb_span, prod_span) * 1.05],
+        range=[-10, max(wire_span, prod_span) * 1.05],
     ),
     template="plotly_dark",
     height=550,
@@ -328,7 +333,7 @@ fig.add_shape(
     type="line",
     x0=0,
     y0=h,
-    x1=max(wire_span, umb_span, prod_span) * 1.1,
+    x1=max(wire_span, prod_span) * 1.1,
     y1=h,
     line=dict(color="Brown", width=2, dash="dashdot"),
 )
