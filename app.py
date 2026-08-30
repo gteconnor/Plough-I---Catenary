@@ -6,6 +6,20 @@ import io
 # Browser tab configuration
 st.set_page_config(page_title="Plough Catenary Web Analyzer", layout="wide")
 
+st.markdown(
+    """
+    <style>
+        .block-container {
+            padding-top: 1rem !important;
+        }
+        .stApp h1 {
+            margin-top: 0.25rem !important;
+        }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
 st.title("⚓ GC's Subsea Plough Trenching Operational Web Engine")
 st.markdown("---")
 
