@@ -26,14 +26,14 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# --- HEADER LAYOUT WITH SIDE-BY-SIDE JPEG LOGO ---
-title_col, logo_col = st.columns()
+# --- FIXED HEADER LAYOUT: Added ratio dimensions [4, 1] ---
+title_col, logo_col = st.columns([4, 1])
 
 with title_col:
     st.title("⚓ GC's Subsea Trenching Operational Web Engine - For Kearnsy")
 
 with logo_col:
-    # UPDATED: Checks for either standard .jpg or .jpeg file extensions
+    # Checks for either standard .jpg or .jpeg file extensions
     logo_filename = "logo.jpg"
     if not os.path.exists(logo_filename):
         logo_filename = "logo.jpeg"
@@ -195,3 +195,4 @@ st.download_button(
     file_name="Independent_Plough_Report.xlsx",
     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 )
+
