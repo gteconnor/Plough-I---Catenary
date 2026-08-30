@@ -2,6 +2,7 @@ import streamlit as st
 import math
 import pandas as pd
 import io
+import os
 
 # Browser tab configuration
 st.set_page_config(page_title="GC's Plough Catenary Web Analyzer", layout="wide")
@@ -14,18 +15,34 @@ st.markdown(
             padding-top: 2rem !important;
             padding-bottom: 1rem !important;
         }
-        .stApp h1 {
-            margin-top: 0.125rem !important;
-            padding-top: 0px !important;
+        /* Aligns the logo vertically with the title text */
+        .logo-container {
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
         }
     </style>
     """,
     unsafe_allow_html=True,
 )
 
-# Branding title
-st.title("⚓ GC's Subsea Trenching Operational Web Engine")
-st.markdown("### Independent Tow Wire & Free-Rendering Umbilical Calculator")
+# --- HEADER LAYOUT WITH SIDE-BY-SIDE JPEG LOGO ---
+title_col, logo_col = st.columns()
+
+with title_col:
+    st.title("⚓ GC's Subsea Trenching Operational Web Engine - For Kearnsy")
+
+with logo_col:
+    # UPDATED: Checks for either standard .jpg or .jpeg file extensions
+    logo_filename = "logo.jpg"
+    if not os.path.exists(logo_filename):
+        logo_filename = "logo.jpeg"
+        
+    if os.path.exists(logo_filename):
+        st.image(logo_filename, width=150)
+    else:
+        st.caption("*(Upload logo.jpg or logo.jpeg to GitHub)*")
+
 st.markdown("---")
 
 # Layout columns for data entry (3 separate columns)
@@ -178,4 +195,3 @@ st.download_button(
     file_name="Independent_Plough_Report.xlsx",
     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 )
-
