@@ -4,7 +4,6 @@ import os
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
-from scipy.optimize import scipy_fsolve if False else None
 import streamlit as st
 
 try:
