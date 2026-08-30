@@ -91,13 +91,20 @@ with col3:
         t_top_prod = st.number_input(
             "Product Top Tension (kN)", value=40.0, step=5.0
         )
+        prod_td_angle = st.number_input(
+            "Product Seabed Angle (° from Horiz)",
+            value=30.0,
+            min_value=0.1,
+            max_value=89.9,
+            step=1.0,
+        )
 
 # ==========================================
 # MATHEMATICAL ENGINE 1: INDEPENDENT TOW WIRE
 # ==========================================
-T_bottom = T_bottom_tons * 9.81  # Convert to kN
+T_bottom = T_bottom_tons * 9.81
 w_sub_wire = w_air * (1.0 - (1025.0 / 7850.0))
-w_wire_kn = (w_sub_wire * 9.81) / 1000.0  # kN/m
+w_wire_kn = (w_sub_wire * 9.81) / 1000.0
 
 alpha_rad = math.radians(td_angle)
 H_wire = T_bottom * math.cos(alpha_rad)
@@ -119,17 +126,14 @@ T_wire_surface_tons = T_wire_surface / 9.81
 # ==========================================
 # MATHEMATICAL ENGINE 2: FREE UMBILICAL
 # ==========================================
-w_umb_kn = (w_umb_sub * 9.81) / 1000.0  # kN/m
+w_umb_kn = (w_umb_sub * 9.81) / 1000.0
 umb_alpha_rad = math.radians(umb_td_angle)
-
-sin_alpha = math.sin(umb_alpha_rad)
 cos_alpha = math.cos(umb_alpha_rad)
 
 if umb_td_angle >= 89.9:
     a_umb = 1e-4
 else:
     a_umb = h / (1.0 / cos_alpha - 1.0) if cos_alpha > 0 else h
-
 a_umb = max(a_umb, 1e-4)
 
 umb_length = math.sqrt(h * (h + 2.0 * a_umb))
@@ -141,7 +145,6 @@ H_umb = a_umb * w_umb_kn
 tan_umb_surface = (umb_length + a_umb * math.tan(umb_alpha_rad)) / a_umb
 umb_surface_angle_horiz = math.degrees(math.atan(tan_umb_surface))
 umb_surface_angle_vertical = 90.0 - umb_surface_angle_horiz
-
 T_umb_surface = w_umb_kn * h + (
     H_umb / cos_alpha if cos_alpha > 0 else H_umb
 )
@@ -150,15 +153,19 @@ T_umb_surface = w_umb_kn * h + (
 # MATHEMATICAL ENGINE 3: PRODUCT CABLE
 # ==========================================
 w_prod_kn_m = (w_prod_tkm * 9.81) / 1000.0
-tension_loss = w_prod_kn_m * h
-t_seabed_prod = t_top_prod - tension_loss
+prod_alpha_rad = math.radians(prod_td_angle)
+# Estimate horizontal tension for product cable based on top tension and seabed angle boundary
+H_prod = max(
+    t_top_prod * math.cos(prod_alpha_rad) - w_prod_kn_m * h * 0.5, 1.0
+)
+a_prod = H_prod / max(w_prod_kn_m, 1e-4)
 
-# Product Cable Catenary Parameter (under top tension)
-a_prod = max(t_top_prod / w_prod_kn_m, 1e-4)
 prod_length = math.sqrt(h * (h + 2.0 * a_prod))
 prod_span = a_prod * math.log(
     (prod_length + math.sqrt(prod_length**2 + a_prod**2)) / a_prod
 )
+tension_loss = w_prod_kn_m * h
+t_seabed_prod = t_top_prod - tension_loss
 
 # ==========================================
 # DISPLAY DASHBOARD
@@ -207,126 +214,8 @@ with out_col2:
             label="Umbilical Horizontal Span", value=f"{umb_span:.2f} m"
         )
 
-# ==========================================
-# 2D INTERACTIVE CATENARY PROFILE PLOT
-# ==========================================
 st.markdown("---")
-st.header("5. Dynamic Subsea Catenary Profile Visualizer")
-
-z_plot = np.linspace(0, h, 100)
-
-# Tow Wire Trajectory
-s_w_plot = np.sqrt(z_plot * (z_plot + 2.0 * a_wire))
-x_w_plot = np.where(
-    s_w_plot > 0,
-    a_wire
-    * np.log((s_w_plot + np.sqrt(s_w_plot**2 + a_wire**2)) / a_wire),
-    0.0,
-)
-
-# Umbilical Trajectory
-s_u_plot = np.sqrt(z_plot * (z_plot + 2.0 * a_umb))
-x_u_plot = np.where(
-    s_u_plot > 0,
-    a_umb * np.log((s_u_plot + np.sqrt(s_u_plot**2 + a_umb**2)) / a_umb),
-    0.0,
-)
-
-# Product Cable Trajectory
-s_p_plot = np.sqrt(z_plot * (z_plot + 2.0 * a_prod))
-x_p_plot = np.where(
-    s_p_plot > 0,
-    a_prod * np.log((s_p_plot + np.sqrt(s_p_plot**2 + a_prod**2)) / a_prod),
-    0.0,
-)
-
-fig = go.Figure()
-
-# Tow Wire (Steel Blue)
-fig.add_trace(
-    go.Scatter(
-        x=x_w_plot,
-        y=-z_plot,
-        mode="lines",
-        name=f"Tow Wire (Span: {wire_span:.1f}m)",
-        line=dict(color="#1f77b4", width=3),
-        hovertemplate="<b>Tow Wire</b><br>Offset: %{x:.2f} m<br>Depth: %{y:.2f} m<extra></extra>",
-    )
-)
-
-# Umbilical (Orange)
-fig.add_trace(
-    go.Scatter(
-        x=x_u_plot,
-        y=-z_plot,
-        mode="lines",
-        name=f"Umbilical (Span: {umb_span:.1f}m)",
-        line=dict(color="#ff7f0e", width=3, dash="dash"),
-        hovertemplate="<b>Umbilical</b><br>Offset: %{x:.2f} m<br>Depth: %{y:.2f} m<extra></extra>",
-    )
-)
-
-# Product Cable (Green)
-fig.add_trace(
-    go.Scatter(
-        x=x_p_plot,
-        y=-z_plot,
-        mode="lines",
-        name=f"Product Cable (Span: {prod_span:.1f}m)",
-        line=dict(color="#2ca02c", width=3, dash="dot"),
-        hovertemplate="<b>Product Cable</b><br>Offset: %{x:.2f} m<br>Depth: %{y:.2f} m<extra></extra>",
-    )
-)
-
-# Touchdown Markers
-fig.add_trace(
-    go.Scatter(
-        x=[wire_span, umb_span, prod_span],
-        y=[-h, -h, -h],
-        mode="markers",
-        name="Seabed Touchdown Points",
-        marker=dict(size=10, symbol="diamond", color=["#1f77b4", "#ff7f0e", "#2ca02c"]),
-        hoverinfo="skip",
-    )
-)
-
-fig.update_layout(
-    title=dict(
-        text="Subsea Line Curvature & Spatial Offset Comparison",
-        x=0.0,
-        font=dict(size=18),
-    ),
-    xaxis_title="Horizontal Offset Distance from Vessel Stern (m)",
-    yaxis_title="Water Depth (m)",
-    template="plotly_white",
-    height=550,
-    hovermode="closest",
-    legend=dict(
-        yanchor="bottom",
-        y=0.02,
-        xanchor="right",
-        x=0.98,
-        bgcolor="rgba(255, 255, 255, 0.8)",
-    ),
-)
-
-# Draw Seabed Reference Line
-fig.add_shape(
-    type="line",
-    x0=0,
-    y0=-h,
-    x1=max(wire_span, umb_span, prod_span) * 1.1,
-    y1=-h,
-    line=dict(color="Brown", width=2, dash="dashdot"),
-)
-
-st.plotly_chart(fig, use_container_width=True)
-
-# ==========================================
-# CABLE INTEGRITY MATRIX
-# ==========================================
-st.markdown("---")
-st.header("6. Product Cable Integrity Matrix")
+st.header("5. Product Cable Integrity Matrix")
 if t_seabed_prod < 0:
     st.error(
         f"⚠️ Cable Seabed Residual Tension: {t_seabed_prod:.2f} kN — CRITICAL RISK OF CABLE BUCKLING INSIDE CHUTE!"
@@ -340,6 +229,78 @@ else:
         f"✅ Cable Seabed Residual Tension: {t_seabed_prod:.2f} kN — Tension bounds stable."
     )
 
+# ==========================================
+# INTERACTIVE PLOTLY VISUALISATION
+# ==========================================
+st.markdown("---")
+st.header("6. Catenary Profile Curves (Side-by-Side View)")
+
+z_plot = np.linspace(0, h, 100)
+
+
+def get_profile_coords(z_arr, a, span_total):
+    x_coords, z_coords = [], []
+    for z in z_arr:
+        s = math.sqrt(z * (z + 2.0 * a))
+        x = (
+            a * math.log((s + math.sqrt(s**2 + a**2)) / a)
+            if s > 0 and a > 0
+            else 0.0
+        )
+        # Shift origin so touchdown point (at z=h) aligns or offset from vessel at x=0
+        x_coords.append(span_total - x)
+        z_coords.append(z)
+    return x_coords, z_coords
+
+
+fig = go.Figure()
+
+xw_c, zw_c = get_profile_coords(z_plot, a_wire, wire_span)
+xu_c, zu_c = get_profile_coords(z_plot, a_umb, umb_span)
+xp_c, zp_c = get_profile_coords(z_plot, a_prod, prod_span)
+
+fig.add_trace(
+    go.Scatter(
+        x=xw_c,
+        y=zw_c,
+        mode="lines",
+        name="Tow Wire",
+        line=dict(color="#1f77b4", width=3),
+    )
+)
+fig.add_trace(
+    go.Scatter(
+        x=xu_c,
+        y=zu_c,
+        mode="lines",
+        name="Umbilical",
+        line=dict(color="#ff7f0e", width=2, dash="dash"),
+    )
+)
+fig.add_trace(
+    go.Scatter(
+        x=xp_c,
+        y=zp_c,
+        mode="lines",
+        name="Product Cable",
+        line=dict(color="#2ca02c", width=2, dash="dot"),
+    )
+)
+
+fig.update_layout(
+    title="Subsea Catenary Profiles (Vessel at Left/Right Spans vs Depth)",
+    xaxis_title="Horizontal Distance (m)",
+    yaxis_title="Water Depth (m)",
+    template="plotly_dark",
+    height=550,
+    legend=dict(
+        orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1
+    ),
+)
+fig.update_yaxes(autorange="reversed")  # 0 at surface, h at seabed
+
+st.plotly_chart(fig, use_container_width=True)
+
 
 # ==========================================
 # PROFILE GENERATOR & EXCEL EXPORT
@@ -352,7 +313,6 @@ def generate_profile_excel(h, a_wire, a_umb, a_prod):
 
     profile_data = []
     for z in z_steps:
-        # Tow Wire profile
         s_w = math.sqrt(z * (z + 2.0 * a_wire))
         x_w = (
             a_wire
@@ -363,7 +323,6 @@ def generate_profile_excel(h, a_wire, a_umb, a_prod):
         ang_w_horiz = math.degrees(math.atan(s_w / a_wire))
         ang_w_vertical = 90.0 - ang_w_horiz if z > 0 else 90.0
 
-        # Umbilical profile
         s_u = math.sqrt(z * (z + 2.0 * a_umb))
         x_u = (
             a_umb
@@ -371,10 +330,9 @@ def generate_profile_excel(h, a_wire, a_umb, a_prod):
             if s_u > 0
             else 0.0
         )
-        ang_u_horiz = math.degrees(math.atan(s_u / a_umb))
+        ang_u_horiz = math.degrees(math.atan(s_u / a_umb)) if a_umb > 0 else 90.0
         ang_u_vertical = 90.0 - ang_u_horiz if z > 0 else 90.0
 
-        # Product Cable profile
         s_p = math.sqrt(z * (z + 2.0 * a_prod))
         x_p = (
             a_prod
@@ -382,27 +340,21 @@ def generate_profile_excel(h, a_wire, a_umb, a_prod):
             if s_p > 0
             else 0.0
         )
-        ang_p_horiz = math.degrees(math.atan(s_p / a_prod))
+        ang_p_horiz = math.degrees(math.atan(s_p / a_prod)) if a_prod > 0 else 90.0
         ang_p_vertical = 90.0 - ang_p_horiz if z > 0 else 90.0
 
         profile_data.append(
             {
                 "Vertical Drop (z) [m]": round(z, 2),
-                "Wire Suspended Length [m]": round(s_w, 2),
-                "Wire Horizontal Dist [m]": round(x_w, 2),
-                "Wire Angle (from Vertical) [deg]": round(
-                    ang_w_vertical, 2
-                ),
-                "Umbilical Suspended Length [m]": round(s_u, 2),
-                "Umbilical Horizontal Dist [m]": round(x_u, 2),
-                "Umbilical Angle (from Vertical) [deg]": round(
-                    ang_u_vertical, 2
-                ),
-                "Product Cable Suspended Length [m]": round(s_p, 2),
-                "Product Cable Horizontal Dist [m]": round(x_p, 2),
-                "Product Cable Angle (from Vertical) [deg]": round(
-                    ang_p_vertical, 2
-                ),
+                "Wire Susp. Length [m]": round(s_w, 2),
+                "Wire Horiz Dist [m]": round(x_w, 2),
+                "Wire Angle (Vert) [deg]": round(ang_w_vertical, 2),
+                "Umb. Susp. Length [m]": round(s_u, 2),
+                "Umb. Horiz Dist [m]": round(x_u, 2),
+                "Umb. Angle (Vert) [deg]": round(ang_u_vertical, 2),
+                "Prod. Susp. Length [m]": round(s_p, 2),
+                "Prod. Horiz Dist [m]": round(x_p, 2),
+                "Prod. Angle (Vert) [deg]": round(ang_p_vertical, 2),
             }
         )
 
