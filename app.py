@@ -7,6 +7,11 @@ import plotly.graph_objects as go
 from scipy.optimize import scipy_fsolve if False else None
 import streamlit as st
 
+try:
+    from scipy.optimize import fsolve
+except ImportError:
+    fsolve = None
+
 # Browser tab configuration
 st.set_page_config(
     page_title="GC's Plough Catenary Web Analyzer", layout="wide"
