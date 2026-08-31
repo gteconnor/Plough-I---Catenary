@@ -46,7 +46,7 @@ with col1:
     with st.container(border=True):
         st.header("1. Tow Wire & Plough Data")
         h = st.number_input(
-            "Water Depth (m)", value=200.0, step=10.0, key="depth"
+            "Water Depth (m)", value=100.0, step=10.0, key="depth"
         )
         td_angle = st.number_input(
             "Tow Wire Target Seabed Angle (°)",
@@ -59,7 +59,7 @@ with col1:
             "Tow Wire Submerged Weight (kg/m)", value=8.24, step=0.1
         )
         T_bottom_tons = st.number_input(
-            "Target Plough Tow Force (Tons)", value=51.0, step=5.0
+            "Target Plough Tow Force (Tons)", value=15.0, step=5.0
         )
 
 with col2:
@@ -76,7 +76,7 @@ with col2:
             "Umbilical Winch Set Tension (Tons)",
             min_value=0.1,
             max_value=8.0,
-            value=2.4,
+            value=2.0,
             step=0.1,
             help="Option A: Winch render threshold drives payout length and geometry dynamically.",
         )
@@ -85,13 +85,13 @@ with col3:
     with st.container(border=True):
         st.header("3. Product Cable Specification")
         w_prod_tkm = st.number_input(
-            "Cable Weight In Water (T/km)", value=4.5, step=0.5
+            "Cable Weight In Water (Tons/km)", value=5, step=0.1
         )
         cable_dia = st.number_input(
-            "Cable Diameter (mm)", value=120.0, step=5.0
+            "Cable Diameter (mm)", value=38.0, step=1.0
         )
         t_top_prod = st.number_input(
-            "Product Top Tension (kN)", value=40.0, step=5.0
+            "Product Top Tension (kN)", value=10.0, step=1.0
         )
 
 # ==========================================
