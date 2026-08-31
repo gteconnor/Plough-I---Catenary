@@ -97,7 +97,7 @@ with col3:
 # ==========================================
 # 1. TOW WIRE MATHEMATICAL ENGINE
 # ==========================================
-T_bottom = T_bottom_tons * 0.980665  # Convert Tonnes to Te (1 Te = 9.80665 kN force equivalency)
+T_bottom = T_bottom_tons * 0.980665  # Convert Tonnes force to Te equivalent
 w_wire_te = w_sub_wire_kg / 1000.0   # Te/m
 
 alpha_rad = math.radians(td_angle)
@@ -113,32 +113,40 @@ V_wire_top = w_wire_te * wire_length + (T_bottom * math.sin(alpha_rad))
 T_wire_surface = math.sqrt(H_wire**2 + V_wire_top**2)
 
 # ==========================================
-# 2. UMBILICAL MATHEMATICAL ENGINE (OPTION A)
+# 2. UMBILICAL MATHEMATICAL ENGINE (FIXED OPTION A)
 # ==========================================
-w_umb_net_te = w_umb_buoyant_kg / 1000.0  # Te/m (negative for buoyant)
+w_umb_net_te = w_umb_buoyant_kg / 1000.0  # -0.00010 Te/m
 X_plough = wire_span
 
-# Catenary scaling parameter from set top tension
-a_umb = (t_umb_top_tons / abs(w_umb_net_te)) - h
+# Signed horizontal catenary parameter (negative for net buoyant)
+a_umb = t_umb_top_tons / w_umb_net_te
 
-# Derive dynamic physical payout length (S_umb)
-sinh_term = math.sinh(X_plough / (2.0 * a_umb))
-umb_length = math.sqrt(h**2 + 4.0 * a_umb * (a_umb + h) * (sinh_term**2))
+# Bisection search to solve exact horizontal offset x0_umb for pinned boundaries
+def solve_x0_umb(X_target, Z_target, a_val):
+    low, high = -50000.0, 50000.0
+    for _ in range(100):
+        mid = (low + high) / 2.0
+        z_end = a_val * (math.cosh((X_target - mid) / a_val) - math.cosh(-mid / a_val))
+        if z_end < Z_target:
+            low = mid
+        else:
+            high = mid
+    return (low + high) / 2.0
 
-# Horizontal offset shift (x0_umb) satisfying vessel (0,0) and swivel (X_plough, h)
-x0_umb = (X_plough / 2.0) - (a_umb * math.atanh(h / umb_length))
+x0_umb = solve_x0_umb(X_plough, h, a_umb)
 
 # Profile array generation
 x_grid_umb = np.linspace(0, X_plough, 200)
-z_u_plot = -a_umb * (np.cosh((x_grid_umb - x0_umb) / a_umb) - np.cosh(-x0_umb / a_umb))
+z_u_plot = a_umb * (np.cosh((x_grid_umb - x0_umb) / a_umb) - np.cosh(-x0_umb / a_umb))
 
-# Natural entry angle at plough swivel
+# Derive true payout length (S_umb)
+s_start = a_umb * np.sinh(-x0_umb / a_umb)
+s_end = a_umb * np.sinh((X_plough - x0_umb) / a_umb)
+umb_length = float(abs(s_end - s_start))
+
+# Swivel angle at plough
 theta_swivel_rad = math.atan(math.sinh((X_plough - x0_umb) / a_umb))
 theta_swivel_deg = math.degrees(theta_swivel_rad)
-
-# Departure angle at vessel stern
-dzdx_vessel = math.sinh(-x0_umb / a_umb)
-umb_surface_angle_vert = 90.0 - math.degrees(math.atan(abs(dzdx_vessel)))
 
 # ==========================================
 # 3. PRODUCT CABLE MATHEMATICAL ENGINE
@@ -154,7 +162,7 @@ prod_span = a_prod * math.log(
 )
 
 # ==========================================
-# DISPLAY DASHBOARD METRICS
+# 4. DISPLAY DASHBOARD METRICS
 # ==========================================
 st.markdown("---")
 st.header("4. Operational Performance Summary")
@@ -223,7 +231,7 @@ x_p_vessel = prod_span - x_p_plot
 
 fig = go.Figure()
 
-# Tow Wire
+# Tow Wire Trace
 fig.add_trace(
     go.Scatter(
         x=x_w_vessel,
@@ -235,7 +243,7 @@ fig.add_trace(
     )
 )
 
-# Buoyant Umbilical
+# Buoyant Umbilical Trace
 fig.add_trace(
     go.Scatter(
         x=x_grid_umb,
@@ -247,7 +255,7 @@ fig.add_trace(
     )
 )
 
-# Product Cable
+# Product Cable Trace
 fig.add_trace(
     go.Scatter(
         x=x_p_vessel,
@@ -259,7 +267,7 @@ fig.add_trace(
     )
 )
 
-# Termination Points
+# Terminations
 fig.add_trace(
     go.Scatter(
         x=[wire_span, wire_span, prod_span],
@@ -299,7 +307,7 @@ fig.update_layout(
     ),
 )
 
-# Seabed Line
+# Seabed Reference Line
 fig.add_shape(
     type="line",
     x0=0,
