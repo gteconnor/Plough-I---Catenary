@@ -118,44 +118,45 @@ T_wire_surface = math.sqrt(H_wire**2 + V_wire_top**2)
 T_wire_surface_tons = T_wire_surface / 9.81
 
 # ==========================================
-# MATHEMATICAL ENGINE 2: UMBILICAL (PINNED 0,0 TO X_PLOUGH, H)
+# MATHEMATICAL ENGINE 2: UMBILICAL (PINNED (0,0) TO (X_PLOUGH, H))
 # ==========================================
 w_umb_kn = (w_umb_sub * 9.81) / 1000.0  # kN/m
 T_umb_surface_kn = t_umb_top_tons * 9.81  # kN
 x_plough = wire_span
 
-# Solve parameter 'a' for catenary passing strictly through (0,0) and (x_plough, h)
-# adjusted for top tension scaling factor
-a_umb_geom = (x_plough**2) / (2.0 * h) if h > 0 else 1.0
-a_umb_tension = max((T_umb_surface_kn / w_umb_kn) - h, 1e-3)
+# Derive horizontal parameter 'a' from top tension setting
+a_umb = max((T_umb_surface_kn / w_umb_kn), 10.0)
 
-# Blend tension parameter with geometric boundary to keep end point fixed at x_plough
-# Higher tension = larger parameter 'a' = flatter curve towards straight line
-a_umb = max(a_umb_tension, 0.1)
-
-# Shift calculation so z(0)=0 and z(x_plough)=h exact:
-# z(x) = C * (cosh((x - x0)/a) - cosh(-x0/a))
-def solve_umbilical_profile(X_end, Z_end, a_param):
-    # Solves offset x0 to force curve through (0,0) and (X_end, Z_end)
+# Exact boundary solver for z(0)=0 and z(x_plough)=h:
+# Formula: z(x) = a * [cosh((x - x0)/a) - cosh(-x0/a)]
+def solve_x0(X_target, Z_target, a_val):
     def eq(x0):
-        return a_param * (np.cosh((X_end - x0) / a_param) - np.cosh(-x0 / a_param)) - Z_end
+        return a_val * (math.cosh((X_target - x0) / a_val) - math.cosh(-x0 / a_val)) - Z_target
 
     if fsolve is not None:
         try:
-            x0_sol = fsolve(eq, X_end / 2.0)[0]
+            return float(fsolve(eq, X_target / 2.0)[0])
         except Exception:
-            x0_sol = X_end / 2.0
-    else:
-        x0_sol = X_end / 2.0
-    return float(x0_sol)
+            pass
 
-x0_umb = solve_umbilical_profile(x_plough, h, a_umb)
+    # Bisection fallback
+    low, high = -5000.0, 5000.0
+    for _ in range(100):
+        mid = (low + high) / 2.0
+        val = eq(mid)
+        if val > 0:
+            low = mid
+        else:
+            high = mid
+    return (low + high) / 2.0
 
-# Calculate suspended umbilical length along catenary from x=0 to x=x_plough
+x0_umb = solve_x0(x_plough, h, a_umb)
+
+# Evaluate depth profile across 200 points
 x_grid_umb = np.linspace(0, x_plough, 200)
 z_u_plot = a_umb * (np.cosh((x_grid_umb - x0_umb) / a_umb) - np.cosh(-x0_umb / a_umb))
 
-# Arc length integration: s = integral(sqrt(1 + (dz/dx)^2)) = a * sinh((x-x0)/a)
+# Suspended arc length calculation
 s_start = a_umb * np.sinh(-x0_umb / a_umb)
 s_end = a_umb * np.sinh((x_plough - x0_umb) / a_umb)
 umb_length = float(s_end - s_start)
@@ -163,7 +164,7 @@ umb_length = float(s_end - s_start)
 umb_span = x_plough
 payout_delta = umb_length - wire_length
 
-# Departure angle at vessel (x=0)
+# Departure angle at vessel stern (x=0)
 dzdx_vessel = np.sinh(-x0_umb / a_umb)
 umb_surface_angle_vert = 90.0 - math.degrees(math.atan(abs(dzdx_vessel)))
 
@@ -273,7 +274,7 @@ fig.add_trace(
     )
 )
 
-# Umbilical Trace (Pinned at 0,0 and x_plough, h)
+# Umbilical Trace (Pinned strictly at 0,0 and x_plough, h)
 fig.add_trace(
     go.Scatter(
         x=x_grid_umb,
@@ -397,7 +398,7 @@ def generate_profile_excel(
             x_w = max(0.0, wire_span - x_w_nat)
             z_w_val = min(a_wire * (math.cosh(x_w / a_wire) - 1.0), h)
 
-        # Umbilical profile (exact 0,0 to x_plough, h boundary)
+        # Umbilical profile
         if x >= wire_span:
             z_u_val = h
             s_u = float(a_umb * (math.sinh((wire_span - x0_umb) / a_umb) - math.sinh(-x0_umb / a_umb)))
