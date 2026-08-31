@@ -59,7 +59,7 @@ with col1:
             "Tow Wire Submerged Weight (kg/m)", value=8.24, step=0.1
         )
         T_bottom_tons = st.number_input(
-            "Target Plough Tow Force (Tons)", value=51.0, step=5.0
+            "Target Plough Tow Force (Tons)", value=15.0, step=5.0
         )
 
 with col2:
