@@ -6,14 +6,9 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
-try:
-    from scipy.optimize import fsolve
-except ImportError:
-    fsolve = None
-
-# Browser tab configuration
+# Page setup
 st.set_page_config(
-    page_title="GC's Plough Catenary Web Analyzer", layout="wide"
+    page_title="Subsea Catenary Web Analyzer", layout="wide"
 )
 
 # Custom CSS styling
@@ -33,7 +28,7 @@ st.markdown(
 title_col, logo_col = st.columns([4, 1])
 
 with title_col:
-    st.title("⚓ GC's Subsea Trenching Operational Web Engine - For Kearnsy")
+    st.title("⚓ Subsea Trenching Operational Web Engine")
 
 with logo_col:
     logo_filename = "logo.jpg" if os.path.exists("logo.jpg") else "logo.jpeg"
@@ -51,7 +46,7 @@ with col1:
     with st.container(border=True):
         st.header("1. Tow Wire & Plough Data")
         h = st.number_input(
-            "Water Depth (m)", value=150.0, step=10.0, key="depth"
+            "Water Depth (m)", value=200.0, step=10.0, key="depth"
         )
         td_angle = st.number_input(
             "Tow Wire Target Seabed Angle (°)",
@@ -60,7 +55,9 @@ with col1:
             max_value=89.9,
             step=1.0,
         )
-        w_air = st.number_input("Wire Air Weight (kg/m)", value=9.48, step=0.1)
+        w_sub_wire_kg = st.number_input(
+            "Tow Wire Submerged Weight (kg/m)", value=8.24, step=0.1
+        )
         T_bottom_tons = st.number_input(
             "Target Plough Tow Force (Tons)", value=51.0, step=5.0
         )
@@ -68,16 +65,20 @@ with col1:
 with col2:
     with st.container(border=True):
         st.header("2. Umbilical Specification")
-        w_umb_sub = st.number_input(
-            "Umbilical Submerged Wt (kg/m)", value=3.50, step=0.1
+        w_umb_buoyant_kg = st.number_input(
+            "Net Buoyant Weight (kg/m)", 
+            value=-0.10, 
+            step=0.01,
+            format="%.2f",
+            help="Negative value denotes net positive buoyancy (+0.10 kg/m upward uplift)."
         )
         t_umb_top_tons = st.slider(
             "Umbilical Winch Set Tension (Tons)",
-            min_value=0.5,
+            min_value=0.1,
             max_value=8.0,
-            value=2.0,
+            value=2.4,
             step=0.1,
-            help="Simulates winch render-out threshold onboard the vessel.",
+            help="Option A: Winch render threshold drives payout length and geometry dynamically.",
         )
 
 with col3:
@@ -94,82 +95,53 @@ with col3:
         )
 
 # ==========================================
-# MATHEMATICAL ENGINE 1: TOW WIRE (UNCHANGED)
+# 1. TOW WIRE MATHEMATICAL ENGINE
 # ==========================================
-T_bottom = T_bottom_tons * 9.81  # kN
-w_sub_wire = w_air * (1.0 - (1025.0 / 7850.0))
-w_wire_kn = (w_sub_wire * 9.81) / 1000.0  # kN/m
+T_bottom = T_bottom_tons * 0.980665  # Convert Tonnes to Te (1 Te = 9.80665 kN force equivalency)
+w_wire_te = w_sub_wire_kg / 1000.0   # Te/m
 
 alpha_rad = math.radians(td_angle)
 H_wire = T_bottom * math.cos(alpha_rad)
-a_wire = H_wire / w_wire_kn
+a_wire = H_wire / w_wire_te
 
 wire_length = math.sqrt(h * (h + 2.0 * a_wire))
 wire_span = a_wire * math.log(
     (wire_length + math.sqrt(wire_length**2 + a_wire**2)) / a_wire
 )
 
-tan_wire_surface = (wire_length + a_wire * math.tan(alpha_rad)) / a_wire
-wire_surface_angle_horiz = math.degrees(math.atan(tan_wire_surface))
-wire_surface_angle_vertical = 90.0 - wire_surface_angle_horiz
-
-V_wire_top = w_wire_kn * wire_length + (T_bottom * math.sin(alpha_rad))
+V_wire_top = w_wire_te * wire_length + (T_bottom * math.sin(alpha_rad))
 T_wire_surface = math.sqrt(H_wire**2 + V_wire_top**2)
-T_wire_surface_tons = T_wire_surface / 9.81
 
 # ==========================================
-# MATHEMATICAL ENGINE 2: UMBILICAL (PINNED (0,0) TO (X_PLOUGH, H))
+# 2. UMBILICAL MATHEMATICAL ENGINE (OPTION A)
 # ==========================================
-w_umb_kn = (w_umb_sub * 9.81) / 1000.0  # kN/m
-T_umb_surface_kn = t_umb_top_tons * 9.81  # kN
-x_plough = wire_span
+w_umb_net_te = w_umb_buoyant_kg / 1000.0  # Te/m (negative for buoyant)
+X_plough = wire_span
 
-# Derive horizontal parameter 'a' from top tension setting
-a_umb = max((T_umb_surface_kn / w_umb_kn), 10.0)
+# Catenary scaling parameter from set top tension
+a_umb = (t_umb_top_tons / abs(w_umb_net_te)) - h
 
-# Exact boundary solver for z(0)=0 and z(x_plough)=h:
-# Formula: z(x) = a * [cosh((x - x0)/a) - cosh(-x0/a)]
-def solve_x0(X_target, Z_target, a_val):
-    def eq(x0):
-        return a_val * (math.cosh((X_target - x0) / a_val) - math.cosh(-x0 / a_val)) - Z_target
+# Derive dynamic physical payout length (S_umb)
+sinh_term = math.sinh(X_plough / (2.0 * a_umb))
+umb_length = math.sqrt(h**2 + 4.0 * a_umb * (a_umb + h) * (sinh_term**2))
 
-    if fsolve is not None:
-        try:
-            return float(fsolve(eq, X_target / 2.0)[0])
-        except Exception:
-            pass
+# Horizontal offset shift (x0_umb) satisfying vessel (0,0) and swivel (X_plough, h)
+x0_umb = (X_plough / 2.0) - (a_umb * math.atanh(h / umb_length))
 
-    # Bisection fallback
-    low, high = -5000.0, 5000.0
-    for _ in range(100):
-        mid = (low + high) / 2.0
-        val = eq(mid)
-        if val > 0:
-            low = mid
-        else:
-            high = mid
-    return (low + high) / 2.0
+# Profile array generation
+x_grid_umb = np.linspace(0, X_plough, 200)
+z_u_plot = -a_umb * (np.cosh((x_grid_umb - x0_umb) / a_umb) - np.cosh(-x0_umb / a_umb))
 
-x0_umb = solve_x0(x_plough, h, a_umb)
+# Natural entry angle at plough swivel
+theta_swivel_rad = math.atan(math.sinh((X_plough - x0_umb) / a_umb))
+theta_swivel_deg = math.degrees(theta_swivel_rad)
 
-# Evaluate depth profile across 200 points
-x_grid_umb = np.linspace(0, x_plough, 200)
-z_u_plot = a_umb * (np.cosh((x_grid_umb - x0_umb) / a_umb) - np.cosh(-x0_umb / a_umb))
-
-# Suspended arc length calculation
-s_start = a_umb * np.sinh(-x0_umb / a_umb)
-s_end = a_umb * np.sinh((x_plough - x0_umb) / a_umb)
-umb_length = float(s_end - s_start)
-
-umb_span = x_plough
-payout_delta = umb_length - wire_length
-
-# Departure angle at vessel stern (x=0)
-dzdx_vessel = np.sinh(-x0_umb / a_umb)
+# Departure angle at vessel stern
+dzdx_vessel = math.sinh(-x0_umb / a_umb)
 umb_surface_angle_vert = 90.0 - math.degrees(math.atan(abs(dzdx_vessel)))
 
 # ==========================================
-# MATHEMATICAL ENGINE 3: PRODUCT CABLE (UNCHANGED)
+# 3. PRODUCT CABLE MATHEMATICAL ENGINE
 # ==========================================
 w_prod_kn_m = (w_prod_tkm * 9.81) / 1000.0
 tension_loss = w_prod_kn_m * h
@@ -182,7 +154,7 @@ prod_span = a_prod * math.log(
 )
 
 # ==========================================
-# DISPLAY DASHBOARD
+# DISPLAY DASHBOARD METRICS
 # ==========================================
 st.markdown("---")
 st.header("4. Operational Performance Summary")
@@ -198,51 +170,40 @@ with out_col1:
         )
         st.metric(
             label="Winch Surface Tension Required",
-            value=f"{T_wire_surface_tons:.1f} Tons",
-            delta=f"{T_wire_surface:.1f} kN",
+            value=f"{T_wire_surface:.1f} Te",
         )
         st.metric(
-            label="Vessel Wire Entry Angle (from VERTICAL)",
-            value=f"{wire_surface_angle_vertical:.2f}°",
-        )
-        st.metric(
-            label="Plough Layback Span (x_plough)",
+            label="Plough Layback Span (X_plough)",
             value=f"{wire_span:.2f} m",
         )
 
 with out_col2:
     with st.container(border=True):
-        st.subheader("🔌 Umbilical System Outputs (Pinned 0,0 → Plough)")
+        st.subheader("🔌 Umbilical System Outputs (Option A - Tension Driven)")
         st.metric(
-            label="Required Umbilical Payout Length",
+            label="Dynamic Required Payout Length",
             value=f"{umb_length:.2f} m",
-            delta=f"{payout_delta:+.2f} m vs Tow Wire",
+            delta=f"{umb_length - wire_length:+.2f} m vs Tow Wire",
         )
         st.metric(
             label="Selected Winch Render Tension",
-            value=f"{t_umb_top_tons:.1f} Tons",
-            delta=f"{T_umb_surface_kn:.1f} kN",
+            value=f"{t_umb_top_tons:.2f} Te",
         )
         st.metric(
-            label="Vessel Departure Angle (from VERTICAL)",
-            value=f"{umb_surface_angle_vert:.2f}°",
-        )
-        st.metric(
-            label="Horizontal Layback Span",
-            value=f"{umb_span:.2f} m",
-            delta="Exact Match to Plough Position",
+            label="Swivel Entry Angle at Plough",
+            value=f"{theta_swivel_deg:.2f}°",
+            delta="Relative to Horizontal",
         )
 
 # ==========================================
-# 5. DYNAMIC SUBSEA CATENARY PROFILE VISUALIZER
+# 5. DYNAMIC PROFILE VISUALIZER
 # ==========================================
 st.markdown("---")
 st.header("5. Dynamic Subsea Catenary Profile Visualizer")
 
-# Tow Wire Curve (Stern 0,0 to Plough x_plough, h)
+# Tow Wire Curve
 z_plot = np.linspace(0, h, 100)
 z_from_bottom = h - z_plot
-
 s_w_plot = np.sqrt(z_from_bottom * (z_from_bottom + 2.0 * a_wire))
 x_w_plot = np.where(
     s_w_plot > 0,
@@ -262,7 +223,7 @@ x_p_vessel = prod_span - x_p_plot
 
 fig = go.Figure()
 
-# Tow Wire Trace
+# Tow Wire
 fig.add_trace(
     go.Scatter(
         x=x_w_vessel,
@@ -270,11 +231,11 @@ fig.add_trace(
         mode="lines",
         name=f"Tow Wire (Span: {wire_span:.1f}m | Length: {wire_length:.1f}m)",
         line=dict(color="#1f77b4", width=3),
-        hovertemplate="<b>Tow Wire</b><br>Horizontal Dist: %{x:.2f} m<br>Depth: %{y:.2f} m<extra></extra>",
+        hovertemplate="<b>Tow Wire</b><br>Distance: %{x:.2f} m<br>Depth: %{y:.2f} m<extra></extra>",
     )
 )
 
-# Umbilical Trace (Pinned strictly at 0,0 and x_plough, h)
+# Buoyant Umbilical
 fig.add_trace(
     go.Scatter(
         x=x_grid_umb,
@@ -282,11 +243,11 @@ fig.add_trace(
         mode="lines",
         name=f"Umbilical (Winch Set: {t_umb_top_tons:.1f}T | Length: {umb_length:.1f}m)",
         line=dict(color="#ff7f0e", width=3, dash="dash"),
-        hovertemplate="<b>Umbilical</b><br>Horizontal Dist: %{x:.2f} m<br>Depth: %{y:.2f} m<extra></extra>",
+        hovertemplate="<b>Umbilical</b><br>Distance: %{x:.2f} m<br>Depth: %{y:.2f} m<extra></extra>",
     )
 )
 
-# Product Cable Trace
+# Product Cable
 fig.add_trace(
     go.Scatter(
         x=x_p_vessel,
@@ -294,11 +255,11 @@ fig.add_trace(
         mode="lines",
         name=f"Product Cable (Span: {prod_span:.1f}m | Length: {prod_length:.1f}m)",
         line=dict(color="#2ca02c", width=3, dash="dot"),
-        hovertemplate="<b>Product Cable</b><br>Horizontal Dist: %{x:.2f} m<br>Depth: %{y:.2f} m<extra></extra>",
+        hovertemplate="<b>Product Cable</b><br>Distance: %{x:.2f} m<br>Depth: %{y:.2f} m<extra></extra>",
     )
 )
 
-# Termination Points at Seabed
+# Termination Points
 fig.add_trace(
     go.Scatter(
         x=[wire_span, wire_span, prod_span],
@@ -351,7 +312,7 @@ fig.add_shape(
 st.plotly_chart(fig, use_container_width=True)
 
 # ==========================================
-# CABLE INTEGRITY MATRIX
+# 6. CABLE INTEGRITY MATRIX
 # ==========================================
 st.markdown("---")
 st.header("6. Product Cable Integrity Matrix")
@@ -369,72 +330,15 @@ else:
     )
 
 # ==========================================
-# PROFILE GENERATOR & EXCEL EXPORT
+# EXCEL REPORT EXPORT
 # ==========================================
 @st.cache_data
-def generate_profile_excel(
-    h, a_wire, a_umb, x0_umb, a_prod, wire_span, prod_span
-):
-    max_span = max(wire_span, prod_span)
-    x_steps = np.linspace(0, max_span, 20)
-
-    profile_data = []
-    for x in x_steps:
-        # Tow Wire profile
-        if x >= wire_span:
-            z_w_val = h
-        else:
-            z_w_from_bottom = h - x
-            term_w = z_w_from_bottom * (z_w_from_bottom + 2.0 * a_wire)
-            s_w = math.sqrt(max(0.0, term_w))
-            x_w_nat = (
-                a_wire
-                * math.log(
-                    (s_w + math.sqrt(max(0.0, s_w**2 + a_wire**2))) / a_wire
-                )
-                if s_w > 0
-                else 0.0
-            )
-            x_w = max(0.0, wire_span - x_w_nat)
-            z_w_val = min(a_wire * (math.cosh(x_w / a_wire) - 1.0), h)
-
-        # Umbilical profile
-        if x >= wire_span:
-            z_u_val = h
-            s_u = float(a_umb * (math.sinh((wire_span - x0_umb) / a_umb) - math.sinh(-x0_umb / a_umb)))
-        else:
-            z_u_val = float(a_umb * (math.cosh((x - x0_umb) / a_umb) - math.cosh(-x0_umb / a_umb)))
-            s_u = float(a_umb * (math.sinh((x - x0_umb) / a_umb) - math.sinh(-x0_umb / a_umb)))
-
-        # Product Cable profile
-        if x >= prod_span:
-            z_p_val = h
-        else:
-            z_p_from_bottom = h - x
-            term_p = z_p_from_bottom * (z_p_from_bottom + 2.0 * a_prod)
-            s_p = math.sqrt(max(0.0, term_p))
-            x_p_nat = (
-                a_prod
-                * math.log(
-                    (s_p + math.sqrt(max(0.0, s_p**2 + a_prod**2))) / a_prod
-                )
-                if s_p > 0
-                else 0.0
-            )
-            x_p = max(0.0, prod_span - x_p_nat)
-            z_p_val = min(a_prod * (math.cosh(x_p / a_prod) - 1.0), h)
-
-        profile_data.append(
-            {
-                "Horizontal Dist (x) [m]": round(x, 2),
-                "Wire Depth (z) [m]": round(z_w_val, 2),
-                "Umbilical Depth (z) [m]": round(z_u_val, 2),
-                "Umbilical Suspended Length [m]": round(s_u, 2),
-                "Product Depth (z) [m]": round(z_p_val, 2),
-            }
-        )
-
-    df_profile = pd.DataFrame(profile_data)
+def generate_profile_excel(h, wire_span, prod_span, x_grid_umb, z_u_plot):
+    df_profile = pd.DataFrame({
+        "Horizontal Distance (m)": np.round(x_grid_umb, 2),
+        "Umbilical Depth (m)": np.round(z_u_plot, 2)
+    })
+    
     buffer = io.BytesIO()
     with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
         df_profile.to_excel(
@@ -443,10 +347,7 @@ def generate_profile_excel(
     buffer.seek(0)
     return buffer
 
-
-excel_buffer = generate_profile_excel(
-    h, a_wire, a_umb, x0_umb, a_prod, wire_span, prod_span
-)
+excel_buffer = generate_profile_excel(h, wire_span, prod_span, x_grid_umb, z_u_plot)
 
 st.download_button(
     label="📥 Export Dynamic Profiling Curves to Excel (.xlsx)",
