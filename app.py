@@ -85,7 +85,7 @@ with col3:
     with st.container(border=True):
         st.header("3. Product Cable Specification")
         w_prod_tkm = st.number_input(
-            "Cable Weight In Water (Tons/km)", value=5, step=0.1
+            "Cable Weight In Water (T/km)", value=5, step=0.1
         )
         cable_dia = st.number_input(
             "Cable Diameter (mm)", value=38.0, step=1.0
